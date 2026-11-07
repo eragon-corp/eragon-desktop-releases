@@ -13,6 +13,8 @@ Get the newest version from the [latest release](https://github.com/eragon-corp/
 | Linux, x64 (updates itself) | [Eragon-linux-x86_64.AppImage](https://github.com/eragon-corp/eragon-desktop-releases/releases/latest/download/Eragon-linux-x86_64.AppImage) |
 | Debian and Ubuntu, x64 | [Eragon-linux-amd64.deb](https://github.com/eragon-corp/eragon-desktop-releases/releases/latest/download/Eragon-linux-amd64.deb) |
 
+**First open on macOS.** Until the app is notarized by Apple, macOS stops it the first time: open **System Settings → Privacy & Security**, find the note about Eragon, and choose **Open Anyway**. You only do this once per version. If macOS says the app is damaged (version 0.1.0 only), run `xattr -dr com.apple.quarantine /Applications/Eragon.app`, or install the latest version.
+
 The app checks this repository for updates and offers **Restart to update** when a new version is ready. On Linux, only the AppImage updates itself; install a new `.deb` by hand.
 
 ## Before you start
