@@ -53,9 +53,23 @@ post() {
   echo "ai-review: $1 — $2"
   echo "$3"
   [ "$mode" = "--dry-run" ] && return 0
-  gh api "repos/{owner}/{repo}/check-runs" \
-    -f name="$CHECK_NAME" -f head_sha="$head" -f status=completed -f conclusion="$1" \
-    -f "output[title]=$2" -f "output[summary]=$3" >/dev/null
+  # Update every earlier verdict on this commit rather than add one. In this
+  # public repository each run's check lands in that run's own check suite,
+  # and branch protection keeps reading an old red one next to a new green.
+  local ids id
+  ids="$(gh api "repos/{owner}/{repo}/commits/$head/check-runs?check_name=$CHECK_NAME&filter=all" \
+    --jq '.check_runs[] | select(.app.slug == "github-actions") | .id')"
+  if [ -z "$ids" ]; then
+    gh api "repos/{owner}/{repo}/check-runs" \
+      -f name="$CHECK_NAME" -f head_sha="$head" -f status=completed -f conclusion="$1" \
+      -f "output[title]=$2" -f "output[summary]=$3" >/dev/null
+    return 0
+  fi
+  for id in $ids; do
+    gh api -X PATCH "repos/{owner}/{repo}/check-runs/$id" \
+      -f status=completed -f conclusion="$1" \
+      -f "output[title]=$2" -f "output[summary]=$3" >/dev/null
+  done
 }
 
 # Dismissed reviews do not count: dismissing one is how a reviewer withdraws it.
