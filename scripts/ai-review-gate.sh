@@ -17,7 +17,7 @@
 #
 # This repository is public, so anyone with a GitHub account can post a
 # review. A person's review, and a review with the marker, count only from
-# someone with access to the repository (owner, member or collaborator).
+# someone with write access to the repository.
 #
 # A CodeRabbit summary comment does not count: it is posted even when
 # CodeRabbit reviewed nothing ("Review limit reached", no review seat).
@@ -59,20 +59,32 @@ post() {
 }
 
 # Dismissed reviews do not count: dismissing one is how a reviewer withdraws it.
+# This repository is public, so a person's review and a marker review count
+# only from someone with write access. Access is read from the collaborator
+# permission API: `author_association` depends on who reads it, and the
+# Actions token sees private org members as CONTRIBUTOR.
 # shellcheck disable=SC2016 # `$author` is spliced in; the rest is jq, not shell.
 counted_reviews() {
+  local login kind line perm
   gh api --paginate "repos/{owner}/{repo}/pulls/$pr/reviews" --jq '
     .[]
     | select(.state != "DISMISSED")
-    | ((.author_association // "") | IN("OWNER", "MEMBER", "COLLABORATOR")) as $member
-    | select(
-        .user.login == "greptile-apps[bot]"
-        or .user.login == "coderabbitai[bot]"
-        or .user.login == "chatgpt-codex-connector[bot]"
-        or (.user.type == "User" and .user.login != "'"$author"'" and $member)
-        or (((.body // "") | test("^\\s*<!-- ai-review -->")) and $member)
-      )
-    | "- \(.user.login) reviewed `\(.commit_id[0:9])`: \(.html_url)"'
+    | (if .user.login == "greptile-apps[bot]"
+          or .user.login == "coderabbitai[bot]"
+          or .user.login == "chatgpt-codex-connector[bot]" then "bot"
+       elif .user.type == "User" and .user.login != "'"$author"'" then "person"
+       elif ((.body // "") | test("^\\s*<!-- ai-review -->")) then "person"
+       else "none" end) as $kind
+    | select($kind != "none")
+    | [.user.login, $kind, "- \(.user.login) reviewed `\(.commit_id[0:9])`: \(.html_url)"]
+    | @tsv' |
+  while IFS=$'\t' read -r login kind line; do
+    if [ "$kind" = person ]; then
+      perm="$(gh api "repos/{owner}/{repo}/collaborators/$login/permission" --jq .permission 2>/dev/null || true)"
+      case "$perm" in admin | maintain | write) ;; *) continue ;; esac
+    fi
+    printf '%s\n' "$line"
+  done
 }
 
 # Greptile's summary comment: its marker, score and last reviewed commit.
