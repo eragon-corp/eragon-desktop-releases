@@ -1,0 +1,100 @@
+# The `ai-review` check: every pull request into main has a code review on
+# record. This is our SOC 2 change-management control (CC8.1), the same one
+# Eragon_s runs; the rule is in scripts/ai-review-gate.sh and the agent
+# instruction is in AGENTS.md.
+#
+# Neither trigger runs the pull request's copy of this workflow or of the
+# script. A pull request that could run its own copy with a token that writes
+# check runs could edit the script and post itself a green audit record.
+# `pull_request_target` runs the base branch's copy; `workflow_run` always
+# runs main's.
+#
+#   pull_request_target  pushes, reopening, and retargeting. `edited` is for a
+#                        base change: a PR opened against another branch is
+#                        green, and retargeting it to main sends no push.
+#   workflow_run         reviews. `pull_request_review` has no `_target` form
+#                        and runs the pull request's code, so it only wakes
+#                        ai-review-relay.yml, which holds no permissions. This
+#                        run, from main, does the work. The relay also wakes
+#                        on Greptile's summary comments; those relay runs come
+#                        from main's copy of the relay and name the pull
+#                        request only as their title.
+#
+# The job checks out the base and nothing from the candidate is executed. A
+# fork's token cannot write a check run. This repository is public, so forks
+# can open pull requests; this workflow still runs only main's copy, and the
+# script counts reviews only from people with access to the repository.
+name: AI review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+  workflow_run:
+    workflows: ["AI review relay"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+
+concurrency:
+  # The latest event wins: the script reads the pull request as it is now, so
+  # an older run has nothing to add.
+  # Every run for one pull request shares its number as the key. A comment
+  # relay run names no pull request and its head branch is main, so its
+  # title, which is the number, stands in. A title or body edit skips its job,
+  # so it gets a group of its own: in the shared one it would cancel a run that
+  # was about to post the verdict, and post nothing in its place.
+  group: >-
+    ai-review-${{ (github.event.action == 'edited' && !github.event.changes.base) && format('edit-{0}', github.run_id)
+      || github.event.pull_request.number
+      || github.event.workflow_run.pull_requests[0].number
+      || (github.event.workflow_run.event == 'issue_comment' && github.event.workflow_run.display_title)
+      || github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  post:
+    # An `edited` that did not change the base is a title or body edit. A
+    # comment relay run that skipped its job was not Greptile's.
+    if: >-
+      (github.event.action != 'edited' || github.event.changes.base)
+      && (github.event.workflow_run.event != 'issue_comment' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Find the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FROM_PR: ${{ github.event.pull_request.number }}
+          FROM_RUN: ${{ github.event.workflow_run.pull_requests[0].number }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_TITLE: ${{ github.event.workflow_run.display_title }}
+        run: |
+          set -euo pipefail
+          pr="${FROM_PR:-$FROM_RUN}"
+          # Only main's relay runs on `issue_comment`, so only there is the
+          # title trusted, and its head branch is main, not the PR's.
+          if [ "$RUN_EVENT" = issue_comment ]; then
+            HEAD_BRANCH=""
+            if [[ "$RUN_TITLE" =~ ^[0-9]+$ ]]; then
+              pr="$RUN_TITLE"
+            fi
+          fi
+          if [ -z "$pr" ] && [ -n "$HEAD_BRANCH" ]; then
+            pr="$(gh pr list --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number // empty')"
+          fi
+          echo "number=$pr" >> "$GITHUB_OUTPUT"
+      - name: Post the ai-review check for this pull request
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ steps.pr.outputs.number }}
+        run: scripts/ai-review-gate.sh "$PR"

@@ -1,0 +1,47 @@
+# Wakes ai-review.yml when a review is submitted, edited, or dismissed, and
+# when Greptile posts or edits its summary comment on a pull request.
+#
+# `pull_request_review` runs the pull request's copy of a workflow, so this one
+# holds no permissions and does nothing. The decision runs in ai-review.yml,
+# which `workflow_run` always takes from main. Editing this file in a pull
+# request can stop the wake-up, which leaves the check red; it cannot make the
+# check green.
+#
+# `issue_comment` runs main's copy of this file. Its `workflow_run` names no
+# pull request, so the run's title is the number, and ai-review.yml reads
+# it from there for comment runs only. The job runs only for Greptile's
+# comments on pull requests; any other comment leaves a skipped run that
+# ai-review.yml ignores.
+name: AI review relay
+# A Greptile comment run's title is the bare pull request number, the one
+# thing ai-review.yml reads from it and keys its concurrency group on, so it
+# shares that group with every other gate run for the pull request. Another
+# comment gets a title of its own, so it cannot share, and cancel, a Greptile
+# wake-up.
+run-name: >-
+  ${{ github.event_name != 'issue_comment'
+    && format('Review on pull request {0}', github.event.pull_request.number)
+    || (github.event.issue.pull_request && github.event.comment.user.login == 'greptile-apps[bot]')
+    && format('{0}', github.event.issue.number)
+    || format('Comment {0}, not Greptile''s on a pull request', github.event.comment.id) }}
+
+on:
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  issue_comment:
+    types: [created, edited]
+
+permissions: {}
+
+jobs:
+  relay:
+    if: >-
+      github.event_name != 'issue_comment'
+      || (github.event.issue.pull_request && github.event.comment.user.login == 'greptile-apps[bot]')
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: echo "$EVENT $ACTION on pull request $PR"
