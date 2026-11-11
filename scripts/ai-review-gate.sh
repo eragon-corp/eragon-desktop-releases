@@ -166,12 +166,19 @@ approving_reviews() {
 # Requests for changes that still stand: a reviewer's latest review that
 # approved or requested changes, on any commit, is a request for changes.
 # This is how GitHub reads it: it stands until the same reviewer approves
-# or someone dismisses it.
+# or someone dismisses it. This repository is public, so, as GitHub does,
+# only a request from someone with write access counts.
 changes_requested() {
-  gh api --paginate --slurp "repos/{owner}/{repo}/pulls/$pr/reviews" | jq -r '
+  local reviews login url perm
+  reviews="$(gh api --paginate --slurp "repos/{owner}/{repo}/pulls/$pr/reviews" | jq -r '
     [.[][] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")]
     | group_by(.user.login)[] | max_by(.submitted_at)
-    | select(.state == "CHANGES_REQUESTED") | .html_url'
+    | select(.state == "CHANGES_REQUESTED") | "\(.user.login)\t\(.html_url)"')"
+  while IFS=$'\t' read -r login url; do
+    [ -n "$login" ] || continue
+    perm="$(gh api "repos/{owner}/{repo}/collaborators/$login/permission" --jq .permission 2>/dev/null || true)"
+    case "$perm" in admin | maintain | write) printf '%s\n' "$url" ;; esac
+  done <<<"$reviews"
 }
 
 # The bot's approvals that still stand, as `<review id> <commit>` lines.
@@ -232,8 +239,8 @@ if [ "$base" != "main" ]; then
 fi
 reviews="$(reviews_on_record)"
 if [ -n "$reviews" ]; then
-  count="$(printf '%s\n' "$reviews" | wc -l | tr -d ' ')"
-  post success "$count review(s) on record" "$reviews"
+  # The approval is settled before the check is posted: a failed lookup then
+  # stops the run before a green check can stand beside a stale approval.
   on_head="$(approving_reviews)"
   blocked="$(changes_requested)"
   if [ -n "$blocked" ]; then
@@ -243,6 +250,12 @@ if [ -n "$reviews" ]; then
     dismiss_bot_approvals keep "New commits since this approval; the ai-review gate approves only a reviewed head."
     approve_head "$on_head"
   else
+    dismiss_bot_approvals none "No review covers the head commit; the ai-review gate approves only a reviewed head."
+    echo "no review on ${head:0:9}; no approval"
+  fi
+  count="$(printf '%s\n' "$reviews" | wc -l | tr -d ' ')"
+  post success "$count review(s) on record" "$reviews"
+else
     dismiss_bot_approvals none "No review covers the head commit; the ai-review gate approves only a reviewed head."
     echo "no review on ${head:0:9}; no approval"
   fi
