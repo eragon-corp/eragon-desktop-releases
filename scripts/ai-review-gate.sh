@@ -256,10 +256,6 @@ if [ -n "$reviews" ]; then
   count="$(printf '%s\n' "$reviews" | wc -l | tr -d ' ')"
   post success "$count review(s) on record" "$reviews"
 else
-    dismiss_bot_approvals none "No review covers the head commit; the ai-review gate approves only a reviewed head."
-    echo "no review on ${head:0:9}; no approval"
-  fi
-else
   dismiss_bot_approvals none "No review on record; the ai-review gate withdrew its approval."
   # Exit 0 after posting the failure: this job's work is posting the check,
   # and a red job next to the red check would say the same thing twice.
