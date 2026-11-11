@@ -10,6 +10,6 @@ Every pull request into `main` needs a code review on record before it merges. T
 
 The `ai-review` check (`scripts/ai-review-gate.sh`) stays red until one exists. A fix pushed after the review keeps the check green.
 
-When a review that counts covers the head commit, the gate also approves the pull request as `github-actions[bot]`. A push after that dismisses the approval until the new head is reviewed, and a request for changes that still stands blocks it until that reviewer approves or the request is dismissed. Branch protection on `main` requires the check and one approval, and admins are held to both. The gate's approval is that one approval, so a pull request merges once a review covers its head.
+When a review that counts covers the head commit, the gate also approves the pull request as `github-actions[bot]`. A push after that dismisses the approval until the new head is reviewed, and a request for changes that still stands blocks it until that reviewer approves or the request is dismissed. Branch protection on `main` requires the check and one approval, and admins are held to both. The gate's approval is that one approval, so a pull request merges once a review covers its head. To check before merging, run `gh pr view <pr> --json reviewDecision`: it reads `APPROVED` once the gate has approved.
 
 To see which reviews count on a pull request, run `GH_REPO=eragon-corp/eragon-desktop-releases scripts/ai-review-gate.sh <pr> --list`.
