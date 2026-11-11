@@ -167,13 +167,14 @@ approving_reviews() {
 # approved or requested changes, on any commit, is a request for changes.
 # This is how GitHub reads it: it stands until the same reviewer approves
 # or someone dismisses it. This repository is public, so, as GitHub does,
-# only a request from someone with write access counts.
+# only a request from someone with write access counts. A failed read of the
+# reviews fails the run rather than read as no request.
 changes_requested() {
   local reviews login url perm
   reviews="$(gh api --paginate --slurp "repos/{owner}/{repo}/pulls/$pr/reviews" | jq -r '
     [.[][] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")]
     | group_by(.user.login)[] | max_by(.submitted_at)
-    | select(.state == "CHANGES_REQUESTED") | "\(.user.login)\t\(.html_url)"')"
+    | select(.state == "CHANGES_REQUESTED") | "\(.user.login)\t\(.html_url)"')" || return 1
   while IFS=$'\t' read -r login url; do
     [ -n "$login" ] || continue
     perm="$(gh api "repos/{owner}/{repo}/collaborators/$login/permission" --jq .permission 2>/dev/null || true)"
