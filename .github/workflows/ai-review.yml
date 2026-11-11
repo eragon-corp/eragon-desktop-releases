@@ -33,9 +33,11 @@ on:
     workflows: ["AI review relay"]
     types: [completed]
 
+# pull-requests: write lets the gate approve a reviewed head as
+# github-actions[bot] and dismiss its stale approvals (scripts/ai-review-gate.sh).
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
   checks: write
 
 concurrency:
